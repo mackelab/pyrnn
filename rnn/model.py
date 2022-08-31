@@ -112,6 +112,24 @@ class RNNCell(nn.Module):
         self.w_inp = nn.Parameter(torch.Tensor(params["n_inp"], params["n_rec"]))
         self.w_rec = nn.Parameter(torch.Tensor(params["n_rec"], params["n_rec"]))
         self.w_out = nn.Parameter(torch.Tensor(params["n_rec"], params["n_out"]))
+        
+        self.w_inp_scale = nn.Parameter(torch.Tensor(1))   
+        self.w_out_scale = nn.Parameter(torch.Tensor(1))
+        
+        if not params["train_w_inp"]:
+            self.w_inp.requires_grad = False
+        if not params["train_w_rec"]:
+            self.w_rec.requires_grad = False
+        if not params["train_w_out"]:
+            self.w_out.requires_grad = False
+        if not params["train_w_inp_scale"]:
+            self.w_inp_scale.requires_grad = False
+        if not params["train_w_out_scale"]:
+            self.w_out_scale.requires_grad = False
+
+
+
+
 
         # time constants
         self.dt = params["dt"]
@@ -123,14 +141,14 @@ class RNNCell(nn.Module):
 
         # initialize parameters
         with torch.no_grad():
+            
             w_inp = initialize_w_inp(params)
             self.w_inp = self.w_inp.copy_(torch.from_numpy(w_inp))
-
+           
             w_rec, dale_mask = initialize_w_rec(params)
             self.dale_mask = torch.from_numpy(dale_mask)
-
             self.w_rec = self.w_rec.copy_(torch.from_numpy(w_rec))
-
+           
             # deep versus shallow learning?
             if params["1overN_out_scaling"]:
                 self.w_out = self.w_out.normal_(
@@ -140,6 +158,7 @@ class RNNCell(nn.Module):
                 self.w_out = self.w_out.normal_(
                     std=params["scale_w_out"] / np.sqrt(params["n_rec"])
                 )
+          
 
             # connection mask
             if params["apply_dale"]:
@@ -151,6 +170,11 @@ class RNNCell(nn.Module):
             # (this is then later projected to be within preset limits)
             if len(params["tau_lims"]) > 1:
                 self.taus_gaus.normal_(std=1)
+           
+            self.w_inp_scale = self.w_inp_scale.fill_(params["scale_w_inp"])
+            self.w_out_scale = self.w_out_scale.fill_(params["scale_w_out"])
+           
+
 
     def forward(self, input, x, noise=0):
         """
@@ -181,13 +205,13 @@ class RNNCell(nn.Module):
 
         # calculate input to units
         rec_input = torch.matmul(self.nonlinearity(x), w_eff.t()) + input.matmul(
-            self.w_inp
+            self.w_inp*self.w_inp_scale
         )
         # update hidden state
         x = (1 - alpha) * x + alpha * rec_input + noise_t
 
         # linear readout of the rates
-        output = self.nonlinearity(x).matmul(self.w_out)
+        output = self.nonlinearity(x).matmul(self.w_out*self.w_out_scale)
 
         return x, output
 

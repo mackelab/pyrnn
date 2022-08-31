@@ -108,7 +108,6 @@ class DMS(Dataset):
             label = 0
         else:
             label = 1
-
         stim = self.all_trials_arr[idx]
 
         T = self.trial_len()
@@ -118,14 +117,14 @@ class DMS(Dataset):
 
         # randomize delay period
         if self.task_params["rand_delay"]:
-            rand_delay = torch.randint(self.task_params["rand_delay"], size=(1))
+            rand_delay = torch.randint(self.task_params["rand_delay"], size=(1,))
 
         else:
             rand_delay = 0
 
         # randomize stimulus onset
         if self.task_params["rand_ons"]:
-            rand_ons = torch.randint(self.task_params["rand_ons"], size=(1))
+            rand_ons = torch.randint(self.task_params["rand_ons"], size=(1,))
         else:
             rand_ons = 0
 

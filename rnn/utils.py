@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.decomposition import PCA
-
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 def PC_traj(state_traj, n_comp=3):
     """
@@ -152,3 +153,39 @@ def orth_proj(a,b, ret_comp = False):
         return b_par, b_orth, alpha
     else:
         return b_par, alpha
+    
+    
+def color_scheme():
+    """
+    Returns colorscheme for Liebe et al. (in preperation) 2022
+    
+    Returns:
+        pltcolors: warm colorscheme
+        pltcolors_alt: cold colorscheme
+    """
+
+    # red to yellow
+    pltcolors = [
+        [c / 255 for c in [255, 201, 70, 255]],
+        [c / 255 for c in [253, 141, 33, 255]],
+        [c / 255 for c in [227, 26, 28, 255]],
+        [c / 255 for c in [142, 23, 15, 255]],
+    ]
+    hexcolors = str([mpl.colors.to_hex(pltcolors[i])[1:] for i in range(4)])
+
+    # green blue
+    pltcolors_alt = [
+        [c / 255 for c in [161, 218, 180, 255]],
+        [c / 255 for c in [65, 182, 196, 255]],
+        [c / 255 for c in [34, 94, 168, 255]],
+        [c / 255 for c in [10, 30, 69, 255]],
+    ]
+
+    a_file = open("matplotlibrc", "r")
+    list_of_lines = a_file.readlines()
+    list_of_lines[-1] = "axes.prop_cycle: cycler('color'," + hexcolors + ")"
+    a_file = open("matplotlibrc", "w")
+    a_file.writelines(list_of_lines)
+    a_file.close()
+
+    return pltcolors, pltcolors_alt
