@@ -1,5 +1,5 @@
 # pyrnn
-General code for training (biologically inspired) recurrent neural networks with pytorch
+General code for training recurrent neural networks with pytorch
 
 Owner: Matthijs Pals
 
