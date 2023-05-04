@@ -19,7 +19,7 @@ class DMS(Dataset):
 
         if task_params["n_channels"] < 2:
             print("WARNING: use minimum of 2 input channels")
-        if task_params["n_channels"] <= task_params["seq_len"]:
+        if task_params["n_channels"] < task_params["seq_len"]:
             print("Sequence length has to be smaller equal input channels")
 
         self.task_params = task_params

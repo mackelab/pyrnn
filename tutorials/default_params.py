@@ -15,9 +15,9 @@ def default_params():
         "scale_w_inp": 1,                 # scale input weights
         "scale_w_out": 1,                 # scale output weights
         "w_rec_dist": "gauss",            # recurrent weight dist, gauss or gamma
-        "spectr_rad": 1.5,                # gain param, recurrent weights
+        "spectr_rad": 1,                # gain param, recurrent weights
         "spectr_norm": True,              # use spectral normalisation on rec weights
-        "apply_dale": True,               # only exitatory / inhibitory outgoing conns
+        "apply_dale": False,               # only exitatory / inhibitory outgoing conns
         "p_inh": 0.2,                     # probability of inhibitory connection
         "balance_dale": True,             # expected input to units (per model) is 0
         "row_balance_dale": False,        # expected input to units (per unit) is 0
@@ -38,11 +38,11 @@ def default_params():
     }
 
     training_params = {
-        "n_epochs": 200,                  # number of passes through possible trials
-        "lr": 1e-3,                       # learning rate
+        "n_epochs": 500,                  # number of passes through possible trials
+        "lr": 10e-5,                       # learning rate
         "batch_size": 4,                  # batch size
         "clip_gradient": 1,               # to avoid explosion of gradients
-        "cuda": True,                     # train on GPU if True
+        "cuda": False,                     # train on GPU if True
         "loss_fn": "mse",                 # loss function (mse, cos or none)
         "optimizer": "adam",              # optimizer (adam)
         "osc_reg_cost": 0,                # oscillatory regularisation weight

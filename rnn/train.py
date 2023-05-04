@@ -114,7 +114,6 @@ def train_rnn(rnn, training_params, task, sync_wandb=False, wandb_log_freq=100, 
             optimizer.zero_grad()
             task_loss = loss_fn(y_pred, y, m)
             reg_loss = torch.stack([reg_fn(rates, rnn.rnn) for reg_fn in reg_fns]).squeeze()#, device=device)
-            #print(torch.sum(reg_loss*reg_costs))
             # grad descent
             loss = task_loss + torch.sum(reg_loss*reg_costs)
             loss.backward()

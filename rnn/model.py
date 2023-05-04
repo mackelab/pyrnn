@@ -127,10 +127,6 @@ class RNNCell(nn.Module):
         if not params["train_w_out_scale"]:
             self.w_out_scale.requires_grad = False
 
-
-
-
-
         # time constants
         self.dt = params["dt"]
         self.tau = params["tau_lims"]

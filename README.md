@@ -1,12 +1,5 @@
 # pyrnn
-General code for training recurrent neural networks with pytorch
+General code for training recurrent neural networks for neuroscience with pytorch
 
-Owner: Matthijs Pals
-
-<br />
-<br />
-Requirements:<br />
-numpy <br />
-pytorch <br />
-sklearn <br />
-wandb (optional)
+To train an RNN model, install the conda environment: 
+```conda env create -f pyrnn.yml```, activate it and open one of the notebooks in the tutorials folder
