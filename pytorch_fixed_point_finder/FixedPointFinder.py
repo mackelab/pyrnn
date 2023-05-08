@@ -36,7 +36,7 @@ class FixedPointFinder(object):
         'feed_dict': {},
         'tol_q': 1e-12,
         'tol_dq': 1e-20,
-        'max_iters': 50000,
+        'max_iters': 5000,
         'method': 'joint',
         'do_rerun_q_outliers': False,
         'outlier_q_scale': 10.0,
@@ -44,8 +44,8 @@ class FixedPointFinder(object):
         'outlier_distance_scale': 10.0,
         'tol_unique': 1e-3,
         'max_n_unique': np.inf,
-        'do_compute_jacobians': False, #TODO: Implement
-        'do_decompose_jacobians': False, #TODO: Implement
+        'do_compute_jacobians': True,
+        'do_decompose_jacobians': True, 
         'torch_dtype': 'float32',
         'random_seed': 0,
         'verbose': True,
@@ -447,14 +447,10 @@ class FixedPointFinder(object):
         if self.do_compute_jacobians:
             if unique_fps.n > 0:
 
-                self._print_if_verbose('\tComputing recurrent Jacobian at %d '
+                self._print_if_verbose('\tComputing recurrent and input Jacobian at %d '
                     'unique fixed points.' % unique_fps.n)
-                dFdx, dFdx_tf = self._compute_recurrent_jacobians(unique_fps)
+                dFdx, dFdu = self._compute_recurrent_input_jacobians(unique_fps)
                 unique_fps.J_xstar = dFdx
-
-                self._print_if_verbose('\tComputing input Jacobian at %d '
-                    'unique fixed points.' % unique_fps.n)
-                dFdu, dFdu_tf = self._compute_input_jacobians(unique_fps)
                 unique_fps.dFdu = dFdu
 
             else:
@@ -816,18 +812,12 @@ class FixedPointFinder(object):
             # when (q-q_prev) is negative, optimization is making progress
             dq = np.abs(q.detach().numpy() - q_prev)
 
-
-            #TO DO: implement this, but currently not used
-            grad_global_norm = self.x.grad.data.norm(2).item()** 2
-            torch.nn.utils.clip_grad_norm_(
-                    self.x, 1
-                )
-            clipped_grad_global_norm=  self.x.grad.data.norm(2).item()** 2
-
-
+            # gradient clipping
+            grad_global_norm = self.x.grad.data.norm(2).item()
             torch.nn.utils.clip_grad_norm_(
                 self.x, iter_clip_val
             )
+
             # update weights
             optimizer.step()
             optimizer.zero_grad()
@@ -855,7 +845,6 @@ class FixedPointFinder(object):
 
             q_prev = q.detach().numpy()
             adaptive_learning_rate.update(q_scalar.item())
-            # TODO: make adapative grad norm clip work!!!!!
             adaptive_grad_norm_clip.update(grad_global_norm)
             iter_count += 1
 
@@ -867,8 +856,8 @@ class FixedPointFinder(object):
 
         iter_count = np.tile(iter_count, q.detach().numpy().shape)
         return x.detach().numpy(), F.detach().numpy(), q.detach().numpy(), dq, iter_count
-    """
-    def _compute_recurrent_jacobians(self, fps):
+    
+    def _compute_recurrent_input_jacobians(self, fps):
         '''Computes the Jacobian of the RNN state transition function at the
         specified fixed points (i.e., partial derivatives with respect to the
         hidden states).
@@ -886,67 +875,30 @@ class FixedPointFinder(object):
 
         '''
         inputs_np = fps.inputs
-
         states_np = fps.xstar
+        inputs_torch = torch.from_numpy(inputs_np)
+        states_torch = torch.from_numpy(states_np)
 
-        with tf.GradientTape(persistent=True) as tape:
-            
-            x_tf, F_tf = self._grab_RNN(states_np, inputs_np)
+        #Jacobian[i][j] will contain the Jacobian of the ith output and jth input
+        #F, output = self.rnn_cell(inputs, initial_states)
+        print(np.shape(inputs_np))
+        print(np.shape(states_np))
+        def batch_func_for_jacobian(inputs,states):
+            # we want to get rid of the batch dimension in the Jacobian definition...
+            # Bit of a hack but it works, see: 
+            # https://discuss.pytorch.org/t/jacobian-functional-api-batch-respecting-jacobian/84571/12
+            F, output = self.rnn_cell(inputs,states)
+            F_sum = torch.sum(F, axis=0)
+            output_sum = torch.sum(output, axis=0)
+            return F_sum, output_sum
+        Jacobians=torch.autograd.functional.jacobian(batch_func_for_jacobian,(inputs_torch,states_torch))
+        J_dx_np = Jacobians[0][1].swapaxes(1, 0).detach().numpy()
+        J_du_np = Jacobians[0][0].swapaxes(1, 0).detach().numpy()
+        print(np.shape(J_dx_np))
+        print(np.shape(J_du_np))
+        return J_dx_np, J_du_np
 
-        J_tf = tape.batch_jacobian(F_tf, x_tf)
-            
-        J_np = self.session.run(J_tf)
-
-        return J_np, J_tf
-
-    def _compute_input_jacobians(self, fps):
-        ''' Computes the partial derivatives of the RNN state transition
-        function with respect to the RNN's inputs.
-
-        Args:
-            fps: A FixedPoints object containing the RNN states (fps.xstar)
-            and inputs (fps.inputs) at which to compute the Jacobians.
-
-        Returns:
-            J_np: An [n x n_states x n_inputs] numpy array containing the
-            partial derivatives of the RNN state transition function at the
-            inputs specified in fps, given the states in fps.
-
-            J_tf: The TF op representing the partial derivatives.
-        '''
-
-        def grab_RNN_for_dFdu(initial_states, inputs):
-            # Modified variant of _grab_RNN(), repurposed for dFdu
-
-            # Same as in _grab_RNN()
-            x, x_rnncell = self._build_state_vars(initial_states)
-
-            # Different from _grab_RNN(), which builds inputs as tf.constant
-            inputs_tf = tf.Variable(inputs, dtype=self.tf_dtype)
-
-            output, F_rnncell = self.rnn_cell(inputs_tf, x_rnncell)
-
-            F = F_rnncell
-
-            init = tf1.variables_initializer(var_list=[x, inputs_tf])
-            self.session.run(init)
-
-            return inputs_tf, F
-
-        inputs_np = fps.inputs
-
-        states_np = fps.xstar
-
-        with tf.GradientTape(persistent=True) as tape:
-
-            inputs_tf, F_tf = grab_RNN_for_dFdu(states_np, inputs_np)
-
-        J_tf = tape.batch_jacobian(F_tf, inputs_tf)
-
-        J_np = self.session.run(J_tf)
-
-        return J_np, J_tf
-    """
+    
     # *************************************************************************
     # Helper functions, no interaction with Tensorflow graph ******************
     # *************************************************************************

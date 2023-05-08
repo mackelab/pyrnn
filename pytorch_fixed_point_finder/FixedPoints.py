@@ -574,7 +574,7 @@ class FixedPoints(object):
                 e_vals_unsrt = self._alloc_nan(
                     (n, n_states), dtype=self.dtype_complex)
                 e_vecs_unsrt = self._alloc_nan(
-                    (n, n_states, n_states), dtype=dtype_complex)
+                    (n, n_states, n_states), dtype=self.dtype_complex)
 
                 e_vals_unsrt[valid_J_idx], e_vecs_unsrt[valid_J_idx] = \
                     np.linalg.eig(self.J_xstar[valid_J_idx])
