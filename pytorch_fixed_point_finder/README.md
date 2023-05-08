@@ -4,10 +4,10 @@ Finds and analyzes the fixed points of recurrent neural networks that have been 
 
 Written for Python 3.9
 
-This is a modified version of [the orginal fixed point finder toolbox](https://github.com/mattgolub/fixed-point-finder/blob/master/FixedPoints.py) written by Matt Golub
+This is a modified version of [the orginal fixed point finder toolbox](https://github.com/mattgolub/fixed-point-finder) written by Matt Golub
 
 
-**If you are using FixedPointFinder in research to be published, please cite our accompanying paper in your publication:**
+**If you are using FixedPointFinder in research to be published, please cite their accompanying paper in your publication:**
 
 Golub and Sussillo (2018), "FixedPointFinder: A Tensorflow toolbox for identifying and characterizing fixed points in recurrent neural networks," *Journal of Open Source Software*, 3(31), 1003, https://doi.org/10.21105/joss.01003 .
 
