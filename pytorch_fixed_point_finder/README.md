@@ -2,7 +2,7 @@
 
 Finds and analyzes the fixed points of recurrent neural networks that have been built using Pytorch. The approach follows that outlined in Sussillo and Barak (2013), "Opening the Black Box: Low-Dimensional Dynamics in High-Dimensional Recurrent Neural Networks", *Neural Computation*.
 
-Written for Python 3.9
+Written for Python 3.9 and pytorch
 
 This is a modified version of [the orginal fixed point finder toolbox](https://github.com/mattgolub/fixed-point-finder) written by Matt Golub
 
