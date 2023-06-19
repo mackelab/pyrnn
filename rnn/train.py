@@ -45,8 +45,6 @@ def train_rnn(rnn, training_params, task, sync_wandb=False, wandb_log_freq=100, 
     else:
         device = torch.device("cpu")
     rnn.to(device=device)
-    if rnn.params["apply_dale"]:
-        rnn.rnn.dale_mask = rnn.rnn.dale_mask.to(device=device)
 
     # choose a loss function
     if training_params["loss_fn"] == "mse":
@@ -97,6 +95,11 @@ def train_rnn(rnn, training_params, task, sync_wandb=False, wandb_log_freq=100, 
 
     losses = []
     reg_losses = []
+
+    #set to some ridiculous value if not specified, so it doesn't get used
+    if training_params["clip_gradient"] is None:
+        training_params["clip_gradient"]=100000
+
     # start training loop
     for i in range(training_params["n_epochs"]):
         loss_ep = 0.0
@@ -119,10 +122,10 @@ def train_rnn(rnn, training_params, task, sync_wandb=False, wandb_log_freq=100, 
             loss.backward()
 
             # clip weights to avoid explosion
-            if training_params["clip_gradient"] is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    rnn.parameters(), training_params["clip_gradient"]
-                )
+     
+            torch.nn.utils.clip_grad_norm_(
+                rnn.parameters(), training_params["clip_gradient"]
+            )
 
             # update weights
             optimizer.step()
@@ -227,12 +230,11 @@ def extract_lfp(x, rnn_cell, normalize=True):
        lfp: local field potential, Tensor of size [batch_size, seq_len]
     """
 
-    w_eff = rnn_cell.mask(rnn_cell.w_rec, rnn_cell.dale_mask)
-    if len(rnn_cell.tau) > 1:
-        tau = project_taus(rnn_cell.taus_gaus, rnn_cell.tau[0], rnn_cell.tau[1])
-        alpha = rnn_cell.dt / tau
-    else:
-        alpha = rnn_cell.dt / rnn_cell.tau[0]
+    w_eff = rnn_cell.dale_mask(rnn_cell.w_rec)
+    w_eff = rnn_cell.conn_mask(w_eff)
+    tau = rnn_cell.project_taus(rnn_cell.taus_gaus, rnn_cell.tau)
+    alpha = rnn_cell.dt / tau
+
 
     # mean absolute synaptic input
     abs_inp = alpha * torch.matmul(rnn_cell.nonlinearity(x), torch.abs(w_eff.t()))
@@ -332,3 +334,127 @@ def cos_loss(output, target, mask):
     loss = 0.5 - 0.5 * ((mask.squeeze() * criterion(output, target)).sum() / mask.sum())
     return loss
 
+
+
+def train_rnn_neurogym(rnn, training_params, dataset, sync_wandb=False, wandb_log_freq=100, x0=None):
+    """
+    Train a biologically inspired RNN
+
+    Args:
+        rnn: initialized RNN
+        training_params: dictionary of training parameters
+        dataset: neurogym dataset
+        syn_wandb (optional): Bool, indicates synchronsation with WandB
+        wandb_log_freq: Int, how often to synchronise gradients + weights
+    """
+
+    # cuda management, gpu highly speeds up training
+    if training_params["cuda"]:
+        if not torch.cuda.is_available():
+            print("Warning: CUDA not available on this machine, switching to CPU")
+            device = torch.device("cpu")
+        else:
+            device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    rnn.to(device=device)
+    if rnn.params["apply_dale"]:
+        rnn.rnn.dale_mask = rnn.rnn.dale_mask.to(device=device)
+
+    # choose a loss function
+    if training_params["loss_fn"] == "mse":
+        loss_fn = mse_loss
+    elif training_params["loss_fn"] == "cos":
+        loss_fn = cos_loss
+    elif training_params["loss_fn"] == "none":
+        loss_fn = zero_loss
+    else:
+        print("WARNING: Loss function not implemented")
+    
+    reg_fns = []
+    reg_costs = []
+  
+    if training_params["offset_reg_cost"]:
+        reg_fns.append(offset_loss)
+        reg_costs.append(training_params["offset_reg_cost"])
+    if len(reg_fns) ==0:
+        reg_fns.append(zero_loss)
+        reg_costs.append(0)
+    reg_costs = torch.tensor(reg_costs, device = device)
+    # optimizer
+    if training_params["optimizer"] == "adam":
+        optimizer = torch.optim.Adam(rnn.parameters(), lr=training_params["lr"])
+
+    # initialize wandb
+    if sync_wandb:
+        wandb.init(
+            project="phase-coding",
+            group="pytorch",
+            config={**rnn.params, **training_params},
+        )
+        config = wandb.config
+        wandb.watch(rnn, log="all", log_freq=wandb_log_freq)
+
+    # start timer before training
+    time0 = time.time()
+    # set rnn to training mode
+    rnn.train()
+
+    losses = []
+    reg_losses = []
+
+    #set to some ridiculous value if not specified, so it doesn't get used
+    if training_params["clip_gradient"] is None:
+        training_params["clip_gradient"]=100000
+
+    # start training loop
+    for i in range(training_params["n_epochs"]):
+        loss_ep = 0.0
+        reg_loss_ep = torch.zeros(len(reg_fns), device =device)
+        num_len = 0
+
+        # loop through dataloader
+        inputs, labels = dataset()
+        x = torch.from_numpy(inputs).type(torch.float32).permute(1,0,2)
+        y = torch.from_numpy(labels).type(torch.float32).unsqueeze(-1).permute(1,0,2)
+        m = torch.abs(torch.clone(y))
+        m = torch.ones_like(y)
+        rates, y_pred = rnn(x,x0)
+        optimizer.zero_grad()
+        task_loss = loss_fn(y_pred, y, m)
+        reg_loss = torch.stack([reg_fn(rates, rnn.rnn) for reg_fn in reg_fns]).squeeze()#, device=device)
+        # grad descent
+        loss = task_loss + torch.sum(reg_loss*reg_costs)
+        loss.backward()
+
+        # clip weights to avoid explosion
+        torch.nn.utils.clip_grad_norm_(
+            rnn.parameters(), training_params["clip_gradient"]
+        )
+
+        # update weights
+        optimizer.step()
+        loss_ep = task_loss.item()
+        reg_loss_ep += reg_loss#.tolist()
+
+        # print average loss and print / sync
+        reg_loss_ep = reg_loss_ep.tolist()
+        print(
+            "epoch {:d} / {:d}: time={:.1f} s, task loss={:.5f}, reg loss=".format(
+                i + 1,
+                training_params["n_epochs"],
+                time.time() - time0,
+                loss_ep
+                ) +
+            str(["{:.5f}"]*len(reg_loss_ep)).format(*reg_loss_ep).strip("[]").replace("'", ""),          
+            end="\r",
+        )
+        if sync_wandb:
+            wandb.log({"task_loss": loss_ep, "reg_los": reg_loss_ep})
+        losses.append(loss_ep)
+        reg_losses.append(reg_loss_ep)
+    print("\nDone. Training took %.1f sec." % (time.time() - time0))
+    if sync_wandb:
+        wandb.finish()
+    rnn.eval()
+    return losses, reg_losses

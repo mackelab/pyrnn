@@ -112,8 +112,8 @@ class RNNCell(nn.Module):
         self.w_inp = nn.Parameter(torch.Tensor(params["n_inp"], params["n_rec"]))
         self.w_rec = nn.Parameter(torch.Tensor(params["n_rec"], params["n_rec"]))
         self.w_out = nn.Parameter(torch.Tensor(params["n_rec"], params["n_out"]))
-        
-        self.w_inp_scale = nn.Parameter(torch.Tensor(1))   
+        self.b_rec = nn.Parameter(torch.Tensor(params["n_rec"]))
+        self.w_inp_scale = nn.Parameter(torch.Tensor(1))
         self.w_out_scale = nn.Parameter(torch.Tensor(1))
         
         if not params["train_w_inp"]:
@@ -126,50 +126,71 @@ class RNNCell(nn.Module):
             self.w_inp_scale.requires_grad = False
         if not params["train_w_out_scale"]:
             self.w_out_scale.requires_grad = False
-
+        if not params["train_b_rec"]:
+            self.b_rec.requires_grad = False
+            
         # time constants
         self.dt = params["dt"]
         self.tau = params["tau_lims"]
+
         if len(params["tau_lims"]) > 1:
             self.taus_gaus = nn.Parameter(torch.Tensor(params["n_rec"]))
             if not params["train_taus"]:
                 self.taus_gaus.requires_grad = False
-
+           
+            if params['project_taus']=='sigmoid':
+                print("project taus sigmoid")
+                self.project_taus = project_taus_sigmoid()
+            elif params['project_taus']=='exp':
+                print("project taus exponential / log")
+                self.project_taus = project_taus_exp()
+            else:
+                print("clip taus")
+                self.project_taus = clip_taus()
+        else:
+            self.project_taus = lambda taus_gaus, tau: taus_gaus
+            self.taus_gaus = nn.Parameter(torch.Tensor(1))
+            self.taus_gaus.requires_grad = False
+            
         # initialize parameters
         with torch.no_grad():
             
             w_inp = initialize_w_inp(params)
-            self.w_inp = self.w_inp.copy_(torch.from_numpy(w_inp))
-           
-            w_rec, dale_mask = initialize_w_rec(params)
-            self.dale_mask = torch.from_numpy(dale_mask)
+            self.w_inp = self.w_inp.copy_(torch.from_numpy(w_inp)/ np.sqrt(params["n_inp"]))
+            
+            w_rec = initialize_w_rec(params)
             self.w_rec = self.w_rec.copy_(torch.from_numpy(w_rec))
+ 
            
-            # deep versus shallow learning?
-            if params["1overN_out_scaling"]:
-                self.w_out = self.w_out.normal_(
-                    std=params["scale_w_out"] / params["n_rec"]
-                )
-            else:
-                self.w_out = self.w_out.normal_(
+            self.w_out = self.w_out.normal_(
                     std=params["scale_w_out"] / np.sqrt(params["n_rec"])
-                )
+            )
           
 
             # connection mask
-            if params["apply_dale"]:
-                self.mask = mask_dale
+            if torch.is_tensor(params["dale_mask"]):
+                self.dale_mask = dale_mask(params["dale_mask"])
             else:
-                self.mask = mask_none
+                self.dale_mask = mask_none
+            if torch.is_tensor(params["conn_mask"]):
+                self.conn_mask = conn_mask(params["conn_mask"])
+            else:
+                self.conn_mask = mask_none
 
             # possibly initialize tau with distribution
             # (this is then later projected to be within preset limits)
             if len(params["tau_lims"]) > 1:
-                self.taus_gaus.normal_(std=1)
+                self.taus_gaus.copy_(self.project_taus.inverse(torch.normal(mean=params["tau_mean"], 
+                                                                            std=params["tau_std"], 
+                                                                            size=(params["n_rec"],)),params["tau_lims"]))
+            else:
+                self.taus_gaus.fill_(params["tau_lims"][0])
+
            
             self.w_inp_scale = self.w_inp_scale.fill_(params["scale_w_inp"])
             self.w_out_scale = self.w_out_scale.fill_(params["scale_w_out"])
-           
+            self.b_rec = self.b_rec.copy_(torch.zeros(params["n_rec"]))
+
 
 
     def forward(self, input, x, noise=0):
@@ -188,17 +209,14 @@ class RNNCell(nn.Module):
         """
 
         # apply mask to weight matrix
-        w_eff = self.mask(self.w_rec, self.dale_mask)
+        w_eff = self.dale_mask(self.w_rec)
+        w_eff = self.conn_mask(w_eff)
 
         # compute alpha (dt/tau), and scale noise accordingly
-        if len(self.tau) == 1:
-            alpha = self.dt / self.tau[0]
-            noise_t = np.sqrt(2 * alpha) * noise
-        else:
-            taus_sig = project_taus(self.taus_gaus, self.tau[0], self.tau[1])
-            alpha = self.dt / taus_sig
-            noise_t = torch.sqrt(2 * alpha) * noise
-
+        taus_sig = self.project_taus(self.taus_gaus, self.tau)
+        alpha = self.dt / taus_sig
+        noise_t = torch.sqrt(2 * alpha) * noise
+        
         # calculate input to units
         rec_input = torch.matmul(self.nonlinearity(x), w_eff.t()) + input.matmul(
             self.w_inp*self.w_inp_scale
@@ -374,33 +392,102 @@ def predict(
     return rates.cpu().detach().numpy(), predict.cpu().detach().numpy()
 
 
-def project_taus(x, lim_low, lim_high):
-    """
-    Apply a non linear projection map to keep x within bounds
 
-    Args:
-        x: Tensor with unconstrained range
-        lim_low: lower bound on range
-        lim_high: upper bound on range
+class project_taus_exp:
 
-    Returns:
-        x_lim: Tensor constrained to have range (lim_low, lim_high)
-    """
+    def __init__(self):
+        pass
+    def __call__(self, x, lims):
+        """
+        Apply a non linear projection map to keep x within bounds
 
-    x_lim = torch.sigmoid(x) * (lim_high - lim_low) + lim_low
-    return x_lim
+        Args:
+            x: Tensor with unconstrained range
+            lim_low: lower bound on range
+            lim_high: upper bound on range
 
+        Returns:
+            x_lim: Tensor constrained to have range (lim_low, lim_high)
+        """
+
+        x_lim = torch.exp(x) + lims[0]
+        return x_lim
+    
+    def inverse(self, x_lim, lims):
+        x = torch.log(torch.abs(x_lim - lims[0]))
+        return x
+
+
+class project_taus_sigmoid:
+    def __init__(self):
+        pass
+    def __call__(self, x, lims):
+        """
+        Apply a non linear projection map to keep x within bounds
+
+        Args:
+            x: Tensor with unconstrained range
+            lim_low: lower bound on range
+            lim_high: upper bound on range
+
+        Returns:
+            x_lim: Tensor constrained to have range (lim_low, lim_high)
+        """
+
+        x_lim = torch.sigmoid(x) * (lims[1] - lims[0]) + lims[0]
+        return x_lim
+    
+    def inverse(self, x_lim, lims):
+        x = (x_lim - lims[0]) / (lims[1] - lims[0])
+        x = torch.log(torch.abs(x/(1-x)))
+        return x
+    
+class clip_taus:
+    def __init__(self):
+        pass
+    def __call__(self, x, lims):
+        """
+        Apply a clipping procedure to keep x within bounds
+
+        Args:
+            x: Tensor with unconstrained range
+            lim_low: lower bound on range
+            lim_high: upper bound on range
+
+        Returns:
+            x_lim: Tensor constrained to have range (lim_low, lim_high)
+        """
+
+        x_lim = torch.clip(x,min = lims[0], max = lims[1])
+        return x_lim
+
+    def inverse(self, x_lim, lims):
+        return x_lim
 
 # Note make these callable classes so we don't have to pass the mask each time?
 # implement __cal__ method
-def mask_dale(w_rec, mask):
-    """Apply Dale mask"""
-    return torch.matmul(torch.relu(w_rec), mask)
 
 
-def mask_none(w_rec, mask):
+class dale_mask:
+    def __init__(self, mask):
+        self.mask = mask
+
+    def __call__(self, w_rec):
+        return torch.matmul(torch.relu(w_rec), self.mask)
+
+
+class conn_mask:
+    def __init__(self, mask):
+        self.mask = mask
+
+    def __call__(self, w_rec):
+        return w_rec * self.mask
+
+
+def mask_none(w_rec):
     """Apply no mask"""
     return w_rec
+
 
 
 def set_nonlinearity(params):

@@ -47,27 +47,6 @@ def initialize_w_rec(params):
             / np.sqrt(params["p_rec"] * params["n_rec"])
         )
 
-    # apply Dale's law, a neuron has either only exitatory
-    # or only inhibitory outgoing connections
-    if params["apply_dale"]:
-        n_inh = int(params["n_rec"] * params["p_inh"])
-
-        dale_mask[-n_inh:] *= -1
-        w_rec = np.abs(w_rec)
-
-        # Balanced DL (expectation input = 0)
-        if params["balance_dale"]:
-            EIratio = (1 - params["p_inh"]) / (params["p_inh"])
-            w_rec[:, -n_inh:] *= EIratio
-            # Row balanced DL (expectation input, per neuron, = 0)
-
-            if params["row_balance_dale"]:
-                ex_u = np.sum(w_rec[:, :-n_inh], axis=1)
-                in_u = np.sum(w_rec[:, -n_inh:], axis=1)
-                ratio = ex_u / in_u
-                w_rec[:, :-n_inh] /= np.expand_dims(ratio, 1)
-            b = np.sqrt((1 / (1 - (2 * params["p_rec"]) / np.pi)) / EIratio)
-            w_rec *= b
 
     # set to desired spectral radius
     if params["spectr_norm"]:
@@ -77,7 +56,7 @@ def initialize_w_rec(params):
             / np.max(np.abs((np.linalg.eigvals(dale_mask.dot(w_rec)))))
         )
     print("spectral_rad: " + str(np.max(abs(np.linalg.eigvals(dale_mask.dot(w_rec))))))
-    return w_rec, dale_mask
+    return w_rec
 
 
 def initialize_w_inp(params):

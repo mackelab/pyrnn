@@ -17,11 +17,6 @@ def default_params():
         "w_rec_dist": "gauss",            # recurrent weight dist, gauss or gamma
         "spectr_rad": 1,                # gain param, recurrent weights
         "spectr_norm": True,              # use spectral normalisation on rec weights
-        "apply_dale": False,               # only exitatory / inhibitory outgoing conns
-        "p_inh": 0.2,                     # probability of inhibitory connection
-        "balance_dale": True,             # expected input to units (per model) is 0
-        "row_balance_dale": False,        # expected input to units (per unit) is 0
-        "1overN_out_scaling": False,      # deep versus shallow learning? (not well tested)
         "train_w_inp": True,              # train input weights
         "train_w_inp_scale": False,       # train input scaling factor
         "train_w_rec": True,              # train recurrent weights
@@ -29,12 +24,16 @@ def default_params():
         "train_taus": False,              # train time constants
         "train_w_out": True,              # train output weights
         "train_w_out_scale": False,       # train output scaling factor
-        "train_b_out": False,             # train output bias
         "train_x0": True,                 # train initial state
         "tau_lims": [100],                # tau limits (min, max) or (value) in ms
+        'project_taus':'sigmoid',         # choice of projection map to keep within limits ("exp", "sigmoid" or "clip")
+        'tau_mean': 100,                  # if tau distribution, specify mean
+        'tau_std':1,                       # if tau distribution, specify std
         "dt": 10,                         # timestep in ms
         "noise_std": 0.05,                # noise std
         "scale_x0": 0.1,                  # std of initial state, if gaussian
+        "conn_mask":None,                 # connection mask (tensor of size n_rec*n_rec)
+        "dale_mask":None,                 # dale mask (tensor of size n_rec*n_rec with only -1 and 1's on diagonal)
     }
 
     training_params = {
