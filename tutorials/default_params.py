@@ -24,7 +24,7 @@ def default_params():
         "train_taus": False,              # train time constants
         "train_w_out": True,              # train output weights
         "train_w_out_scale": False,       # train output scaling factor
-        "train_x0": True,                 # train initial state
+        "train_x0": False,                 # train initial state
         "tau_lims": [100],                # tau limits (min, max) or (value) in ms
         'project_taus':'sigmoid',         # choice of projection map to keep within limits ("exp", "sigmoid" or "clip")
         'tau_mean': 100,                  # if tau distribution, specify mean
@@ -51,16 +51,16 @@ def default_params():
     }
 
     task_params = {
-        "stim_ons": 40,                   # stimulus onset (units are number of time steps)
+        "stim_ons": 20,                   # stimulus onset (units are number of time steps)
         "rand_ons": 0,                    # randomise onset with this amount
         "stim_dur": 20,                   # stimulus duration
-        "stim_offs": 20,                  # stimulus offsets
+        "stim_offs": 0,                  # stimulus offsets
         "delay": 100,                     # delay length
         "rand_delay": 0,                  # randomize delay with this amount
         "probe_dur": 20,                  # probe duration
-        "probe_offs": 20,                 # probe offset
+        "probe_offs": 0,                 # probe offset
         "response_dur": 20,               # response duration
-        "response_ons": 20,               # response onset
+        "response_ons": 0,               # response onset
         "seq_len": 1,                     # sequence length
         "n_channels": n_stims,            # number of stimulus
     }
